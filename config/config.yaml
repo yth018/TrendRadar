@@ -41,7 +41,7 @@ app:
 # ===============================================================
 schedule:
   enabled: true                         # 是否启用调度系统
-  preset: "morning_evening"             # 预设模板名称（见上方说明）
+  preset: "custom"             # 预设模板名称（见上方说明）
 
 
 # ===============================================================
@@ -57,26 +57,22 @@ platforms:
   sources:
     - id: "toutiao"
       name: "今日头条"
-    - id: "baidu"
-      name: "百度热搜"
     - id: "wallstreetcn-hot"
       name: "华尔街见闻"
     - id: "thepaper"
       name: "澎湃新闻"
-    - id: "bilibili-hot-search"
-      name: "bilibili 热搜"
+    - id: "zhihu"
+      name: "知乎"
     - id: "cls-hot"
       name: "财联社热门"
     - id: "ifeng"
       name: "凤凰网"
-    - id: "tieba"
-      name: "贴吧"
     - id: "weibo"
       name: "微博"
     - id: "douyin"
       name: "抖音"
-    - id: "zhihu"
-      name: "知乎"
+    - id: "bilibili-hot-search"
+      name: "bilibili 热搜"
 
 
 
@@ -153,7 +149,7 @@ rss:
 report:
   mode: "current"                     # daily | current | incremental（schedule 开启时作为默认值）
 
-  display_mode: "keyword"             # 分组维度: keyword | platform
+  display_mode: "platform"             # 分组维度: keyword | platform
                                       # keyword: 按关键词分组显示（默认）
                                       # platform: 按平台/来源分组显示
 
@@ -178,12 +174,12 @@ report:
 # 5) 这里决定“筛选路径”，不决定 AI 模型（模型在 ai 段）
 # ===============================================================
 filter:
-  method: "ai"                     # 可选: keyword | ai
+  method: "keyword"                     # 可选: keyword | ai
 
   # AI 模式标签排序开关（仅 ai 模式生效）
   # true: 按标签优先级排序（来自兴趣描述提取顺序）
   # false: 按匹配条数排序（条数多的在前）
-  priority_sort_enabled: true
+  priority_sort_enabled: false
 
 
 # ===============================================================
@@ -251,32 +247,17 @@ display:
   #   1. 在此列表中
   #   2. 下方 regions 中对应开关为 true
   region_order:
-    - new_items                           # 1️⃣ 新增热点区域
-    - hotlist                             # 2️⃣ 热榜区域（关键词匹配 / AI 智能筛选）
-    - rss                                 # 3️⃣ RSS 订阅区域
-    - standalone                          # 4️⃣ 独立展示区
-    - ai_analysis                         # 5️⃣ AI 分析区域
-
-  # 推送区域开关
-  # 控制各区域是否启用（配合 region_order 使用）
+    - new_items                       # 1️⃣ 新增热点区域
+    - hotlist                       # 2️⃣ 热榜区域（关键词匹配 / AI 智能筛选）
+    - rss                       # 3️⃣ RSS 订阅区域
+    - standalone                       # 4️⃣ 独立展示区
+    - ai_analysis                       # 5️⃣ AI 分析区域
   regions:
-    hotlist: true                     # 热榜区域（关键词匹配 / AI 智能筛选）
-    new_items: false                   # 新增热点区域（含热榜新增 + RSS 新增）
-                                      # 注：热点词汇统计中的新增标记🆕不受此配置影响
-
-    rss: true                         # RSS 订阅区域
-                                      # 开启后将对 RSS 进行关键词分析并在通知中展示
-                                      # 关闭后跳过分析，但独立展示区不受影响
-
-    standalone: false                 # 独立展示区（完整热榜/RSS，不受关键词过滤）
-    ai_analysis: true                 # AI 分析区域
-
-  # 📋 独立展示区配置
-  # 用途：将指定平台的完整热榜/RSS 数据独立提取，不受关键词过滤影响
-  # 两个独立用途：
-  #   - 推送展示：由 regions.standalone 开关控制，在推送中单独展示完整热榜
-  #   - AI 分析：由 ai_analysis.include_standalone 开关控制，将完整数据送入 AI 做深度分析
-  # 两者共享此处的平台/RSS 配置，但开关互相独立（可只开 AI 分析、不推送展示）
+    new_items: false # 新增热点区域（含热榜新增 + RSS 新增）
+    hotlist: false # 热榜区域（关键词匹配 / AI 智能筛选）
+    rss: false # RSS 订阅区域
+    standalone: false # 独立展示区（完整热榜/RSS，不受关键词过滤）
+    ai_analysis: false # AI 分析区域
   standalone:
     platforms: ["zhihu", "wallstreetcn-hot"]     # 热榜平台 ID 列表（如 ["zhihu", "weibo"]）
     rss_feeds: []                     # RSS 源 ID 列表（如 ["hacker-news"]）
@@ -308,7 +289,7 @@ display:
 # • 跑通后再增加多渠道和多账号，排障成本最低
 # ===============================================================
 notification:
-  enabled: true                       # 是否启用通知功能（总开关）
+  enabled: false                       # 是否启用通知功能（总开关）
                                       # ⚠️ 开启调度系统后，此项仍为总开关：
                                       #   false → 永远不推送（无论调度怎么设置）
                                       #   true  → 由调度的 push 字段控制何时推送
@@ -362,7 +343,7 @@ storage:
   # - auto: 自动选择（GitHub Actions 且配置了远程存储 → remote，否则 → local）
   # - local: 本地 SQLite + TXT/HTML 文件
   # - remote: 远程云存储（S3 兼容协议，支持 R2/OSS/COS 等）
-  backend: "auto"
+  backend: "local"
 
   # 数据格式选项
   formats:
@@ -468,7 +449,7 @@ ai:
 # 模型配置见上方 ai 配置段
 # ===============================================================
 ai_analysis:
-  enabled: true                     # 是否启用 AI 分析（总开关）
+  enabled: false                     # 是否启用 AI 分析（总开关）
                                     # ⚠️ 开启调度系统后，此项仍为总开关：
                                     #   false → 永远不分析（无论调度怎么设置）
                                     #   true  → 由调度的 analyze 字段控制何时分析
@@ -527,7 +508,7 @@ ai_analysis:
 # 模型配置见上方 ai 配置段
 # ===============================================================
 ai_translation:
-  enabled: true                    # 是否启用翻译功能
+  enabled: false                    # 是否启用翻译功能
 
   # 翻译目标语言
   # 格式：自然语言描述
