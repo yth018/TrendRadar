@@ -1,5 +1,5 @@
 name: Get Hot News
-
+# Initialize GitHub Actions workflow
 on:
   schedule:
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
