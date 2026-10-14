@@ -217,8 +217,7 @@ display:
 #    配对项（如 Telegram token 和 chat_id）数量必须一致
 # ===============================================================
 notification:
-  # 待配置并确认应用机器人私聊接收者后再启用；现有 Webhook 目的地未验证。
-  enabled: false                      # 暂停通知，避免发送到未确认目的地
+  enabled: true                       # 是否启用通知功能（true=启用, false=关闭）—— 总开关
                                       # 开启 schedule 后此项仍为总开关：false=永远不推送，true=由调度控制
 
   # 推送渠道配置
@@ -382,7 +381,7 @@ ai_analysis:
   max_news_for_analysis: 150        # 参与分析的新闻数量上限（控制 token 成本的关键项）
                                     # 热榜优先占用配额，RSS 用剩余配额，独立展示区不受此限制
 
-  include_rss: true                 # 是否包含 RSS 内容进行分析（true=包含, false=不包含）
+  include_rss: false                # 是否包含 RSS 内容进行分析（true=包含, false=不包含）
   include_standalone: true          # 是否纳入独立展示区数据（true=纳入, false=不纳入）
 
   include_rank_timeline: true       # 排名时间线详细程度
