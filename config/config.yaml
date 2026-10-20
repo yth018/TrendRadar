@@ -40,8 +40,8 @@ app:
 # 详细时间线图请查看 config/timeline.yaml
 # ===============================================================
 schedule:
-  enabled: false                        # 是否启用调度系统（true=启用, false=关闭，默认关闭）
-  preset: "morning_evening"             # 预设模板名称（见上方说明）
+  enabled: true                        # 是否启用调度系统（true=启用, false=关闭，默认关闭）
+  preset: "office_hours"             # 预设模板名称（见上方说明）
 
 
 # ===============================================================
@@ -117,7 +117,7 @@ rss:
 # 4. 报告模式
 # ===============================================================
 report:
-  mode: "current"                     # 报告模式（开启 schedule 后作为默认值，会被 timeline 时段覆盖）
+  mode: "daily"                     # 报告模式（开启 schedule 后作为默认值，会被 timeline 时段覆盖）
                                       # daily = 当日汇总，按时推送当天所有匹配新闻（会包含之前推过的）
                                       # current = 当前榜单，按时推送当前在榜的匹配新闻（持续在榜的每次都出现）
                                       # incremental = 增量监控，只推送新增内容，零重复（没有新增时不推送）
@@ -190,21 +190,21 @@ display:
   # 调整顺序：剪切粘贴整行即可
   # 要显示某个区域，需同时：1. 在此列表中  2. 下方 regions 对应开关为 true
   region_order:
+    - ai_analysis                       # 5️⃣ AI 分析区域
     - new_items                       # 1️⃣ 新增热点区域
     - hotlist                       # 2️⃣ 热榜区域（关键词匹配 / AI 智能筛选）
     - rss                       # 3️⃣ RSS 订阅区域
     - standalone                       # 4️⃣ 独立展示区
-    - ai_analysis                       # 5️⃣ AI 分析区域
   regions:
+    ai_analysis: true # AI 分析区域（true=显示, false=隐藏）
     new_items: true # 新增热点区域：含热榜新增 + RSS 新增（true=显示, false=隐藏）
     hotlist: true # 热榜区域：关键词匹配 / AI 智能筛选（true=显示, false=隐藏）
     rss: true # RSS 订阅区域（true=显示并分析, false=隐藏并跳过分析）
     standalone: true # 独立展示区：完整热榜/RSS，不受关键词过滤（true=显示, false=隐藏）
-    ai_analysis: true # AI 分析区域（true=显示, false=隐藏）
   standalone:
     platforms: [] # 热榜平台 ID 列表（如 ["zhihu", "weibo"]）
     rss_feeds: ["AIHOT"] # RSS 源 ID 列表（如 ["hacker-news"]）
-    max_items: 19                                # 每个源最多展示条数（0=不限制）
+    max_items: 10                                # 每个源最多展示条数（0=不限制）
 
 
 # ===============================================================
@@ -381,7 +381,7 @@ ai_analysis:
   max_news_for_analysis: 150        # 参与分析的新闻数量上限（控制 token 成本的关键项）
                                     # 热榜优先占用配额，RSS 用剩余配额，独立展示区不受此限制
 
-  include_rss: false                # 是否包含 RSS 内容进行分析（true=包含, false=不包含）
+  include_rss: true                # 是否包含 RSS 内容进行分析（true=包含, false=不包含）
   include_standalone: true          # 是否纳入独立展示区数据（true=纳入, false=不纳入）
 
   include_rank_timeline: true       # 排名时间线详细程度
