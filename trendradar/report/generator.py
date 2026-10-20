@@ -116,6 +116,8 @@ def prepare_report_data(
                 "mobile_url": title_data.get("mobileUrl", ""),
                 "is_new": title_data.get("is_new", False),
                 "rank_timeline": title_data.get("rank_timeline", []),
+                "ai_summary": title_data.get("ai_summary", ""),
+                "summary_basis": title_data.get("summary_basis", ""),
             }
             processed_titles.append(processed_title)
 
@@ -206,7 +208,7 @@ def generate_html_report(
     if report_metadata:
         _METADATA_KEYS = {
             "hotlist_total", "platform_total", "rss_matched_count",
-            "rss_total_count", "rss_source_total", "rss_source_failed",
+            "rss_total_count", "rss_source_total", "rss_source_failed", "report_type",
         }
         for key in _METADATA_KEYS:
             if key in report_metadata:

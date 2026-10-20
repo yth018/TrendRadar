@@ -388,7 +388,7 @@ class AIFilter:
         response: str,
         titles: List[Dict],
         tags: List[Dict],
-    ) -> List[Dict]:
+    ) -> Optional[List[Dict]]:
         """解析分类的 AI 响应
 
         支持两种 JSON 格式：
@@ -401,7 +401,7 @@ class AIFilter:
         if not json_str:
             if self.debug:
                 print(f"[AI筛选][DEBUG] 无法从分类响应中提取 JSON，原始响应前 500 字符: {(response or '')[:500]}")
-            return []
+            return None
 
         try:
             data = json.loads(json_str)
@@ -409,12 +409,12 @@ class AIFilter:
             if self.debug:
                 print(f"[AI筛选][DEBUG] 分类响应 JSON 解析失败: {e}")
                 print(f"[AI筛选][DEBUG] 提取的 JSON 文本前 500 字符: {json_str[:500]}")
-            return []
+            return None
 
         if not isinstance(data, list):
             if self.debug:
                 print(f"[AI筛选][DEBUG] 分类响应顶层不是数组，实际类型: {type(data).__name__}")
-            return []
+            return None
 
         # 构建 id 映射
         title_ids = {t["id"] for t in titles}

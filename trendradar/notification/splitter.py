@@ -8,7 +8,7 @@
 from datetime import datetime
 from typing import Dict, List, Optional, Callable
 
-from trendradar.report.formatter import format_title_for_platform
+from trendradar.report.formatter import format_title_for_platform, append_item_summary
 from trendradar.report.helpers import format_rank_display
 from trendradar.utils.time import DEFAULT_TIMEZONE, format_iso_time_friendly, convert_time_for_display
 from trendradar.notification.batch import truncate_at_line_boundary
@@ -1800,6 +1800,7 @@ def _format_standalone_platform_item(item: Dict, index: int, format_type: str, r
         if count_display:
             item_line += f" {count_display}"
 
+    item_line = append_item_summary(item_line, item, format_type)
     item_line += "\n"
     return item_line
 
@@ -1867,5 +1868,6 @@ def _format_standalone_rss_item(
         if meta_str:
             item_line += f" `{meta_str}`"
 
+    item_line = append_item_summary(item_line, item, format_type)
     item_line += "\n"
     return item_line

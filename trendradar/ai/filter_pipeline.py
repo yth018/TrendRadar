@@ -27,6 +27,7 @@ class AIFilterPipeline:
         get_time_func: Callable,
     ):
         self.config = config
+        self._date = None
         self.storage = storage_manager
         self.get_time = get_time_func
 
@@ -61,7 +62,7 @@ class AIFilterPipeline:
                     pass
         return result
 
-    def run(self, interests_file: Optional[str] = None) -> Optional[AIFilterResult]:
+    def run(self, interests_file: Optional[str] = None, date: Optional[str] = None) -> Optional[AIFilterResult]:
         """
         执行 AI 智能筛选完整流程
 
@@ -72,6 +73,7 @@ class AIFilterPipeline:
         5. 保存结果
         6. 查询 active 结果，按标签分组返回
         """
+        self._date = date
         filter_config = self._filter_config
 
         ai_filter = AIFilter(self._ai_config, filter_config, self.get_time, self._debug)
@@ -103,7 +105,7 @@ class AIFilterPipeline:
         self.storage.begin_batch()
 
         # 3. 检查提示词是否变更
-        stored_hash = self.storage.get_latest_prompt_hash(interests_file=effective_interests_file)
+        stored_hash = self.storage.get_latest_prompt_hash(interests_file=effective_interests_file, date=self._date)
 
         if self._debug:
             print(f"[AI筛选][DEBUG] 数据库存储 hash: {stored_hash}")
@@ -116,7 +118,7 @@ class AIFilterPipeline:
             )
 
         # 获取当前 active 标签
-        active_tags = self.storage.get_active_ai_filter_tags(interests_file=effective_interests_file)
+        active_tags = self.storage.get_active_ai_filter_tags(interests_file=effective_interests_file, date=self._date)
         if self._debug:
             print(f"[AI筛选][DEBUG] 从数据库获取 active 标签: {len(active_tags)} 个")
             for t in active_tags:
@@ -155,7 +157,7 @@ class AIFilterPipeline:
         self.storage.end_batch()
 
         # 8. 查询并组装返回结果
-        all_results = self.storage.get_active_ai_filter_results(interests_file=effective_interests_file)
+        all_results = self.storage.get_active_ai_filter_results(interests_file=effective_interests_file, date=self._date)
 
         if self._debug:
             print(f"[AI筛选][DEBUG] === 最终汇总 ===")
@@ -169,7 +171,11 @@ class AIFilterPipeline:
             for key, count in sorted(tag_counts.items()):
                 print(f"[AI筛选][DEBUG]   {key}: {count} 条")
 
-        return self._build_filter_result(all_results, active_tags, total_pending)
+        result = self._build_filter_result(all_results, active_tags, total_pending)
+        if len(succeeded_news_ids) != len(pending_news) or len(succeeded_rss_ids) != len(pending_rss):
+            result.success = False
+            result.error = "部分新闻分类失败，未将失败批次记为已分析"
+        return result
 
     def _handle_tag_update(
         self,
@@ -180,7 +186,7 @@ class AIFilterPipeline:
         effective_interests_file: str,
         filter_config: Dict,
     ) -> None:
-        new_version = self.storage.get_latest_ai_filter_tag_version() + 1
+        new_version = self.storage.get_latest_ai_filter_tag_version(date=self._date) + 1
         threshold = filter_config.get("RECLASSIFY_THRESHOLD", 0.6)
 
         if stored_hash is None:
@@ -190,11 +196,11 @@ class AIFilterPipeline:
                 self.storage.end_batch()
                 raise _TagExtractionError()
             tags_data = _with_ordered_priorities(tags_data, start_priority=1)
-            saved_count = self.storage.save_ai_filter_tags(tags_data, new_version, current_hash, interests_file=effective_interests_file)
+            saved_count = self.storage.save_ai_filter_tags(tags_data, new_version, current_hash, interests_file=effective_interests_file, date=self._date)
             print(f"[AI筛选] 已保存 {saved_count} 个标签 (版本 {new_version})")
             return
 
-        old_tags = self.storage.get_active_ai_filter_tags(interests_file=effective_interests_file)
+        old_tags = self.storage.get_active_ai_filter_tags(interests_file=effective_interests_file, date=self._date)
         update_result = ai_filter.update_tags(old_tags, interests_content)
 
         if update_result is None:
@@ -204,9 +210,9 @@ class AIFilterPipeline:
                 self.storage.end_batch()
                 raise _TagExtractionError()
             tags_data = _with_ordered_priorities(tags_data, start_priority=1)
-            deprecated_count = self.storage.deprecate_all_ai_filter_tags(interests_file=effective_interests_file)
-            self.storage.clear_analyzed_news(interests_file=effective_interests_file)
-            saved_count = self.storage.save_ai_filter_tags(tags_data, new_version, current_hash, interests_file=effective_interests_file)
+            deprecated_count = self.storage.deprecate_all_ai_filter_tags(interests_file=effective_interests_file, date=self._date)
+            self.storage.clear_analyzed_news(interests_file=effective_interests_file, date=self._date)
+            saved_count = self.storage.save_ai_filter_tags(tags_data, new_version, current_hash, interests_file=effective_interests_file, date=self._date)
             print(f"[AI筛选] 废弃 {deprecated_count} 个旧标签, 保存 {saved_count} 个新标签 (版本 {new_version})")
             return
 
@@ -225,9 +231,9 @@ class AIFilterPipeline:
                 self.storage.end_batch()
                 raise _TagExtractionError()
             tags_data = _with_ordered_priorities(tags_data, start_priority=1)
-            deprecated_count = self.storage.deprecate_all_ai_filter_tags(interests_file=effective_interests_file)
-            self.storage.clear_analyzed_news(interests_file=effective_interests_file)
-            saved_count = self.storage.save_ai_filter_tags(tags_data, new_version, current_hash, interests_file=effective_interests_file)
+            deprecated_count = self.storage.deprecate_all_ai_filter_tags(interests_file=effective_interests_file, date=self._date)
+            self.storage.clear_analyzed_news(interests_file=effective_interests_file, date=self._date)
+            saved_count = self.storage.save_ai_filter_tags(tags_data, new_version, current_hash, interests_file=effective_interests_file, date=self._date)
             print(f"[AI筛选] 废弃 {deprecated_count} 个旧标签, 保存 {saved_count} 个新标签 (版本 {new_version})")
         else:
             self._apply_incremental_update(
@@ -249,33 +255,33 @@ class AIFilterPipeline:
             remove_set = set(remove_tags)
             removed_ids = [t["id"] for t in old_tags if t["tag"] in remove_set]
             if removed_ids:
-                self.storage.deprecate_specific_ai_filter_tags(removed_ids)
+                self.storage.deprecate_specific_ai_filter_tags(removed_ids, date=self._date)
                 if self._debug:
                     print(f"[AI筛选][DEBUG] 废弃标签 IDs: {removed_ids}")
 
         keep_with_priority = []
         if keep_tags:
-            self.storage.update_ai_filter_tag_descriptions(keep_tags, interests_file=effective_interests_file)
+            self.storage.update_ai_filter_tag_descriptions(keep_tags, interests_file=effective_interests_file, date=self._date)
             keep_with_priority = _with_ordered_priorities(keep_tags, start_priority=1)
-            self.storage.update_ai_filter_tag_priorities(keep_with_priority, interests_file=effective_interests_file)
+            self.storage.update_ai_filter_tag_priorities(keep_with_priority, interests_file=effective_interests_file, date=self._date)
 
         if add_tags:
             add_start = keep_with_priority[-1]["priority"] + 1 if keep_with_priority else 1
             add_with_priority = _with_ordered_priorities(add_tags, start_priority=add_start)
-            saved_count = self.storage.save_ai_filter_tags(add_with_priority, new_version, current_hash, interests_file=effective_interests_file)
+            saved_count = self.storage.save_ai_filter_tags(add_with_priority, new_version, current_hash, interests_file=effective_interests_file, date=self._date)
             if self._debug:
                 print(f"[AI筛选][DEBUG] 新增保存 {saved_count} 个标签")
 
-        self.storage.update_ai_filter_tags_hash(effective_interests_file, current_hash)
+        self.storage.update_ai_filter_tags_hash(effective_interests_file, current_hash, date=self._date)
 
         if add_tags:
-            cleared = self.storage.clear_unmatched_analyzed_news(interests_file=effective_interests_file)
+            cleared = self.storage.clear_unmatched_analyzed_news(interests_file=effective_interests_file, date=self._date)
             if cleared > 0:
                 print(f"[AI筛选]   清除 {cleared} 条不匹配记录，将在新标签下重新分析")
 
     def _collect_pending_news(self, effective_interests_file: str):
-        all_news = self.storage.get_all_news_ids()
-        analyzed_hotlist = self.storage.get_analyzed_news_ids("hotlist", interests_file=effective_interests_file)
+        all_news = self.storage.get_all_news_ids(date=self._date)
+        analyzed_hotlist = self.storage.get_analyzed_news_ids("hotlist", interests_file=effective_interests_file, date=self._date)
         pending_news = [n for n in all_news if n["id"] not in analyzed_hotlist]
 
         pending_rss = []
@@ -284,7 +290,7 @@ class AIFilterPipeline:
         analyzed_rss = set()
 
         if self._rss_enabled:
-            all_rss = self.storage.get_all_rss_ids()
+            all_rss = self.storage.get_all_rss_ids(date=self._date)
 
             fresh_rss = []
             for n in all_rss:
@@ -297,7 +303,7 @@ class AIFilterPipeline:
                         continue
                 fresh_rss.append(n)
 
-            analyzed_rss = self.storage.get_analyzed_news_ids("rss", interests_file=effective_interests_file)
+            analyzed_rss = self.storage.get_analyzed_news_ids("rss", interests_file=effective_interests_file, date=self._date)
             pending_rss = [n for n in fresh_rss if n["id"] not in analyzed_rss]
 
         return pending_news, pending_rss, all_news, analyzed_hotlist, all_rss, analyzed_rss, freshness_filtered_rss
@@ -368,7 +374,7 @@ class AIFilterPipeline:
 
     def _save_results(self, total_results, succeeded_news_ids, succeeded_rss_ids, effective_interests_file, current_hash):
         if total_results:
-            saved = self.storage.save_ai_filter_results(total_results)
+            saved = self.storage.save_ai_filter_results(total_results, date=self._date)
             print(f"[AI筛选] 保存 {saved} 条分类结果")
             if self._debug and saved != len(total_results):
                 print(f"[AI筛选][DEBUG] !! 保存数量不一致: 期望 {len(total_results)}, 实际 {saved}（可能有重复记录被跳过）")
@@ -379,13 +385,13 @@ class AIFilterPipeline:
         if succeeded_news_ids:
             self.storage.save_analyzed_news(
                 succeeded_news_ids, "hotlist", effective_interests_file,
-                current_hash, matched_hotlist_ids
+                current_hash, matched_hotlist_ids, date=self._date
             )
 
         if succeeded_rss_ids:
             self.storage.save_analyzed_news(
                 succeeded_rss_ids, "rss", effective_interests_file,
-                current_hash, matched_rss_ids
+                current_hash, matched_rss_ids, date=self._date
             )
 
         if succeeded_news_ids or succeeded_rss_ids:
@@ -568,6 +574,7 @@ class AIFilterPipeline:
                     "is_new": is_new,
                     "time_display": time_display,
                     "matched_keyword": tag_name,
+                    "source_id": item.get("source_id", ""),
                 }
 
                 if source_type == "rss":

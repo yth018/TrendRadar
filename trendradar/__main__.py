@@ -7,6 +7,8 @@ TrendRadar 主程序
 """
 
 import argparse
+import json
+import shutil
 import os
 import webbrowser
 from pathlib import Path
@@ -812,7 +814,8 @@ class NewsAnalyzer:
         # 检查是否有有效内容（热榜或RSS）
         has_news_content = self._has_valid_content(stats, new_titles)
         has_rss_content = bool(rss_items and len(rss_items) > 0)
-        has_any_content = has_news_content or has_rss_content
+        has_standalone = any(g.get("items") for source in (standalone_data or {}).values() for g in source)
+        has_any_content = has_news_content or has_rss_content or has_standalone
 
         # 计算热榜匹配条数
         news_count = sum(len(stat.get("titles", [])) for stat in stats) if stats else 0
@@ -898,7 +901,7 @@ class NewsAnalyzer:
                     date_str = self.ctx.format_date()
                     scheduler.record_execution(schedule.period_key, "push", date_str)
 
-            return True
+            return all(results.values())
 
         elif cfg["ENABLE_NOTIFICATION"] and not has_notification:
             print("⚠️ 警告：通知功能已启用但未配置任何通知渠道，将跳过通知发送")
@@ -1425,6 +1428,9 @@ class NewsAnalyzer:
         if not schedule.collect:
             print("[调度] 当前时间段不执行数据采集，跳过分析流水线")
             return None
+        if self.ctx.config.get("REPORT_WINDOW", {}).get("enabled", False):
+            return self._execute_window_report(schedule, failed_ids)
+
         # 获取当前监控平台ID列表
         current_platform_ids = self.ctx.platform_ids
 
@@ -1606,6 +1612,101 @@ class NewsAnalyzer:
 
         return html_file
 
+    def _execute_window_report(self, schedule, failed_ids):
+        """扩展原有 daily 数据范围；调度、日库分类、HTML 和通知继续复用原实现。"""
+        from trendradar.core.report_window import (
+            build_window_stats, build_window_standalone, read_sent_keys, window_bounds, write_delivery_record,
+        )
+        from trendradar.ai.item_summary import enrich_item_summaries
+
+        cfg = self.ctx.config
+        preview = cfg.get("PREVIEW_REPORT", False)
+        if self.filter_method != "ai":
+            raise ValueError("report.window 当前需要 filter.method=ai")
+        now = self.ctx.get_time()
+        start, cutoff = window_bounds(now, cfg["REPORT_WINDOW"])
+        directory = Path(cfg["STORAGE"]["LOCAL"]["DATA_DIR"]) / "briefings"
+        record = directory / (now.strftime("%Y-%m-%d") + ".json")
+        scheduler = self.ctx.create_scheduler()
+        if not preview:
+            if not schedule.push:
+                # 原有分类缓存在日库，静默采集时提前分类，减少早报等待时间。
+                result = self.ctx.run_ai_filter(self.interests_file)
+                if result and not result.success:
+                    print("[早报] 部分分类未完成，下次运行继续")
+                return None
+            if record.exists() or (schedule.once_push and schedule.period_key and
+                    scheduler.already_executed(schedule.period_key, "push", now.strftime("%Y-%m-%d"))):
+                print("[早报] 今天已有发送记录或待核实的发送尝试，跳过")
+                return None
+
+        if now < cutoff:
+            print("[早报] 尚未到内容截止时间，继续静默采集")
+            return None
+        stats, rss_items = build_window_stats(
+            self.ctx, now, cfg["REPORT_WINDOW"], self.interests_file,
+            read_sent_keys(directory),
+        )
+        matched_keys = {t["item_key"] for g in stats + rss_items for t in g["titles"]}
+        standalone = build_window_standalone(self.ctx, now, cfg["REPORT_WINDOW"],
+                                             read_sent_keys(directory) | matched_keys)
+        standalone_groups = [{"titles": g["items"]} for source in (standalone or {}).values() for g in source]
+        if not stats and not rss_items and not standalone:
+            print("[早报] 时间窗口内没有符合兴趣的新内容，跳过推送")
+            return None
+        summary_cfg = cfg.get("AI_ANALYSIS", {})
+        if summary_cfg.get("ENABLED", False) and summary_cfg.get("ITEM_SUMMARIES", False):
+            enrich_item_summaries(stats + standalone_groups, rss_items, ai_config=cfg.get("AI", {}))
+        self._hotlist_total_count = sum(g["count"] for g in stats)
+        self._rss_matched_count = sum(g["count"] for g in rss_items)
+        title = f"工作日早报 · {start:%m-%d %H:%M}—{cutoff:%m-%d %H:%M}"
+        coverage = directory / "coverage.json"
+        if coverage.exists():
+            started = json.loads(coverage.read_text(encoding="utf-8")).get("collection_started_at", "")
+            if started and now.fromisoformat(started) > start:
+                title += "（历史采集尚未覆盖完整窗口）"
+        # 沿用现有翻译和 HTML 管线，原始摘要已随标题对象保留。
+        dispatcher = self.ctx.create_notification_dispatcher()
+        report_data, rss_items, _, standalone = dispatcher.translate_content(
+            {"stats": stats, "new_titles": []}, rss_items=rss_items, standalone_data=standalone,
+        )
+        stats = report_data["stats"]
+        html_file = None
+        if cfg["STORAGE"]["FORMATS"]["HTML"]:
+            html_file = self.ctx.generate_html(
+                stats, self._hotlist_total_count, failed_ids=failed_ids,
+                mode="daily", rss_items=rss_items, standalone_data=standalone,
+                report_metadata={"report_type": title},
+            )
+        directory.mkdir(parents=True, exist_ok=True)
+        # 可下载的本次早报预览，不包含任何 webhook 或 API key。
+        if html_file:
+            shutil.copyfile(html_file, directory / "preview.html")
+        (directory / "preview.json").write_text(json.dumps(
+            {"window_start": start.isoformat(), "window_end": cutoff.isoformat(),
+             "stats": stats, "rss": rss_items, "standalone": standalone}, ensure_ascii=False, indent=2), encoding="utf-8")
+        if preview or not cfg["ENABLE_NOTIFICATION"]:
+            print("[早报] 预览已生成，本次禁用通知；未写入发送记录")
+            return html_file
+        if not self._has_notification_configured():
+            raise RuntimeError("早报未配置通知渠道")
+        keys = {t["item_key"] for g in stats + rss_items for t in g["titles"]}
+        keys.update(t["item_key"] for source in (standalone or {}).values() for g in source for t in g["items"])
+        write_delivery_record(record, "attempted", keys)
+        try:
+            ok = self._send_notification_if_needed(
+                stats, title, "daily", failed_ids=failed_ids,
+                html_file_path=html_file, rss_items=rss_items,
+                ai_result=AIAnalysisResult(skipped=True), schedule=schedule, standalone_data=standalone,
+            )
+        except Exception:
+            write_delivery_record(record, "uncertain", keys)
+            raise RuntimeError("早报发送结果不明，请核实接收端后处理，不自动重发") from None
+        write_delivery_record(record, "sent" if ok else "uncertain", keys)
+        if not ok:
+            raise RuntimeError("早报未确认全部发送成功，请核实接收端，不自动重发")
+        return html_file
+
     def run(self) -> None:
         """执行分析流程"""
         try:
@@ -1613,6 +1714,13 @@ class NewsAnalyzer:
                 return
 
             mode_strategy = self._get_mode_strategy()
+
+            if self.ctx.config.get("REPORT_WINDOW", {}).get("enabled", False):
+                directory = Path(self.ctx.config["STORAGE"]["LOCAL"]["DATA_DIR"]) / "briefings"
+                directory.mkdir(parents=True, exist_ok=True)
+                coverage = directory / "coverage.json"
+                if not coverage.exists():
+                    coverage.write_text(json.dumps({"collection_started_at": self.ctx.get_time().isoformat()}), encoding="utf-8")
 
             # 抓取热榜数据
             results, id_to_name, failed_ids = self._crawl_data()
@@ -1629,7 +1737,7 @@ class NewsAnalyzer:
 
         except Exception as e:
             print(f"分析流程执行出错: {e}")
-            if self.ctx.config.get("DEBUG", False):
+            if self.ctx.config.get("DEBUG", False) or self.ctx.config.get("REPORT_WINDOW", {}).get("enabled", False):
                 raise
         finally:
             # 清理资源（包括过期数据清理和数据库连接关闭）
@@ -1659,6 +1767,8 @@ def main():
     parser.add_argument("--doctor", action="store_true", help="运行环境与配置体检")
     parser.add_argument("--test-notification", action="store_true", help="发送测试通知到已配置渠道")
 
+    parser.add_argument("--no-notify", action="store_true", help="采集分析但不发送通知")
+    parser.add_argument("--preview-report", action="store_true", help="生成早报预览，不发送通知或记录发送状态")
     args = parser.parse_args()
 
     debug_mode = False
@@ -1670,6 +1780,10 @@ def main():
             return
 
         config = load_config()
+        if args.no_notify or args.preview_report:
+            config["ENABLE_NOTIFICATION"] = False
+        config["PREVIEW_REPORT"] = args.preview_report
+        debug_mode = config.get("DEBUG", False) or config.get("REPORT_WINDOW", {}).get("enabled", False)
 
         if args.show_schedule:
             handle_status_commands(config)
@@ -1697,7 +1811,6 @@ def main():
                 "remote_version": remote_version,
             }
 
-        debug_mode = analyzer.ctx.config.get("DEBUG", False)
         analyzer.run()
     except FileNotFoundError as e:
         print(f"❌ 配置文件错误: {e}")

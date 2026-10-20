@@ -222,27 +222,27 @@ presets:
   # ───────────────────────────────────────────────────────────
   office_hours:
     name: "办公时间"
-    description: "工作日三段式推送（到岗→午间→收工），周末增量自由推送。"
+    description: "全天采集，周一至周五八点早报；窗口留出 Actions 排队余量。"
 
     default:
       collect: true
       analyze: false
-      ai_mode: "current"
+      ai_mode: "daily"
       push: false                  # 默认不推送
-      report_mode: "current"
+      report_mode: "daily"
       once:
         analyze: true              # 每个时段只分析一次
         push: true                 # 每个时段只推送一次
 
     periods:
       morning_briefing:
-        name: "到岗速览"
-        start: "09:00"
-        end: "11:00"
-        analyze: true              # AI 分析当前热点
-        ai_mode: "current"         # AI 分析当前榜单
-        push: true                 # 到岗后看当前热点
-        report_mode: "current"     # 当前在榜的新闻
+        name: "工作日八点早报"
+        start: "08:00"
+        end: "10:00"
+        analyze: true              # AI 处理早报内容
+        ai_mode: "daily"         # AI 处理早报内容
+        push: true                 # 工作日早报
+        report_mode: "daily"     # 由 report.window 指定跨日内容范围
         # once 继承 default（analyze: true, push: true）→ 只推/分析一次
 
     day_plans:

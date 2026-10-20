@@ -1,11 +1,7 @@
 name: Check In
 
-# ✅ 签到续期：运行此 workflow 可重置 7 天计时，保持 "Get Hot News" 正常运行
-# ✅ Renewal: Run this workflow to reset the 7-day timer and keep "Get Hot News" active
-#
-# 📌 操作方法 / How to use:
-#   1. 点击 "Run workflow" 按钮 / Click "Run workflow" button
-#   2. 每 7 天内至少运行一次 / Run at least once every 7 days
+# 手动清理旧运行；早报已取消签到停用机制。
+# 保留最近 7 天运行及其状态产物，避免删除跨日新闻和推送去重记录。
 
 on:
   workflow_dispatch:
@@ -17,12 +13,12 @@ jobs:
       actions: write
       contents: read
     steps:
-      - name: Delete all workflow runs
+      - name: Delete old workflow runs
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
-          retain_days: 0
-          keep_minimum_runs: 0
+          retain_days: 7
+          keep_minimum_runs: 10
           delete_workflow_by_state_pattern: "ALL"
           delete_run_by_conclusion_pattern: "ALL"

@@ -1446,6 +1446,9 @@ def render_html_content(
     else:
         mode_display = "全天汇总"
 
+    if report_data.get("report_type"):
+        mode_display = html_escape(report_data["report_type"])
+
     # 计算各项数据
     hot_news_count = sum(len(stat["titles"]) for stat in report_data["stats"])
     new_count = report_data.get("total_new_count", 0)
@@ -1696,6 +1699,8 @@ def render_html_content(
                 else:
                     stats_html += escaped_title
 
+                if title_data.get("ai_summary"):
+                    stats_html += '<div class="rss-summary">' + html_escape(title_data["ai_summary"]) + '</div>'
                 stats_html += """
                             </div>
                         </div>
@@ -1864,6 +1869,8 @@ def render_html_content(
                 else:
                     rss_html += escaped_title
 
+                if title_data.get("ai_summary"):
+                    rss_html += '<div class="rss-summary">' + html_escape(title_data["ai_summary"]) + '</div>'
                 rss_html += """
                             </div>
                         </div>"""
@@ -2053,6 +2060,8 @@ def render_html_content(
                 else:
                     standalone_html += escaped_title
 
+                if item.get("ai_summary"):
+                    standalone_html += '<div class="rss-summary">' + html_escape(item["ai_summary"]) + '</div>'
                 standalone_html += """
                                 </div>
                             </div>
@@ -2117,6 +2126,8 @@ def render_html_content(
                 else:
                     standalone_html += escaped_title
 
+                if item.get("ai_summary"):
+                    standalone_html += '<div class="rss-summary">' + html_escape(item["ai_summary"]) + '</div>'
                 standalone_html += """
                                 </div>
                             </div>

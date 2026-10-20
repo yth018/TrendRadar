@@ -76,6 +76,7 @@ def _load_report_config(config_data: Dict) -> Dict:
 
     return {
         "REPORT_MODE": report_config.get("mode", "daily"),
+        "REPORT_WINDOW": report_config.get("window", {}),
         "DISPLAY_MODE": report_config.get("display_mode", "keyword"),
         "RANK_THRESHOLD": report_config.get("rank_threshold", 10),
         "SORT_BY_POSITION_FIRST": sort_by_position_env if sort_by_position_env is not None else report_config.get("sort_by_position_first", False),
@@ -287,6 +288,7 @@ def _load_ai_analysis_config(config_data: Dict) -> Dict:
         "MODE": ai_config.get("mode", "follow_report"),
         "MAX_NEWS_FOR_ANALYSIS": ai_config.get("max_news_for_analysis", 50),
         "INCLUDE_RSS": ai_config.get("include_rss", True),
+        "ITEM_SUMMARIES": ai_config.get("item_summaries", False),
         "INCLUDE_RANK_TIMELINE": ai_config.get("include_rank_timeline", False),
         "INCLUDE_STANDALONE": ai_config.get("include_standalone", False),
     }

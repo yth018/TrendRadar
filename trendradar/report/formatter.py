@@ -10,7 +10,7 @@ from typing import Dict
 from trendradar.report.helpers import clean_title, html_escape, format_rank_display
 
 
-def format_title_for_platform(
+def _format_title_for_platform(
     platform: str, title_data: Dict, show_source: bool = True, show_keyword: bool = False
 ) -> str:
     """统一的标题格式化方法
@@ -250,3 +250,23 @@ def format_title_for_platform(
 
     else:
         return cleaned_title
+
+
+def format_title_for_platform(platform: str, title_data: Dict, show_source: bool = True, show_keyword: bool = False) -> str:
+    result = _format_title_for_platform(platform, title_data, show_source, show_keyword)
+    return append_item_summary(result, title_data, platform)
+
+
+def append_item_summary(result: str, title_data: Dict, platform: str) -> str:
+    summary = title_data.get("ai_summary", "")
+    if summary:
+        if platform == "html":
+            result += '<div class="rss-summary">' + html_escape(summary) + '</div>'
+        elif platform == "telegram":
+            result += "\n" + html_escape(summary)
+        else:
+            # 摘要按纯文本展示，防止模型输出被解析为链接、提及或格式指令。
+            for char in "[]<>*_`":
+                summary = summary.replace(char, {"[": "［", "]": "］", "<": "＜", ">": "＞"}.get(char, ""))
+            result += "\n" + summary
+    return result
