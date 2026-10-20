@@ -147,7 +147,8 @@ def build_window_standalone(ctx, now, settings, excluded_keys):
                     continue
                 seen.add(row["key"])
                 stamp = row["timestamp"].isoformat()
-                items.append({**row, "item_key": row["key"], "published_at": stamp,
+                item = {k: v for k, v in row.items() if k not in {"timestamp", "key"}}
+                items.append({**item, "item_key": row["key"], "published_at": stamp,
                               "first_time": row["timestamp"].strftime("%H:%M"), "count": 1})
                 if limit > 0 and len(items) >= limit:
                     break

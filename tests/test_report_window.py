@@ -145,6 +145,8 @@ def test_independent_feed_keeps_configured_limit_and_summary(tmp_path):
     selected = result["rss_feeds"][0]["items"]
     assert [r["title"] for r in selected] == ["rss2", "rss1"]
     assert all(r["summary"] == "来源摘要" for r in selected)
+    import json
+    assert json.loads(json.dumps(result))["rss_feeds"][0]["items"] == selected
     storage.cleanup()
 
 
