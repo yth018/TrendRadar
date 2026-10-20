@@ -372,7 +372,7 @@ ai:
 # 9. AI 分析功能（模型配置见上方 ai 段）
 # ===============================================================
 ai_analysis:
-  item_summaries: true              # 每条新闻附简短摘要；仅标题时注明“标题简述”
+  item_summaries: true              # 逐条读取内容后分析；正文不可读时明确标注
   enabled: true                     # 是否启用 AI 分析（true=启用, false=关闭）—— 总开关
                                     # 开启 schedule 后此项仍为总开关：false=永远不分析，true=由调度控制
 

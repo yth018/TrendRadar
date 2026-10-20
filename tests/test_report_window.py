@@ -124,11 +124,11 @@ def test_invalid_classification_is_not_successful_zero_matches(response):
 def test_summary_survives_existing_report_and_feishu_formatter():
     title = {"title": "新闻", "source_name": "源", "time_display": "10-20 07:30",
              "count": 1, "ranks": [1], "rank_threshold": 10,
-             "url": "https://example.com/a", "ai_summary": "标题简述：内容概括。"}
+             "url": "https://example.com/a", "ai_summary": "内容分析：正文事实及意义。"}
     report = prepare_report_data([{"word": "科技", "count": 1, "titles": [title]}])
     line = format_title_for_platform("feishu", report["stats"][0]["titles"][0])
     assert "[新闻](https://example.com/a)" in line
-    assert "\n标题简述：内容概括。" in line
+    assert "\n内容分析：正文事实及意义。" in line
 
 
 def test_independent_feed_keeps_configured_limit_and_summary(tmp_path):
@@ -207,7 +207,7 @@ def test_html_and_actual_feishu_splitter_show_every_summary():
     from trendradar.report.html import render_html_content
     title = {"title": "新闻", "source_name": "源", "time_display": "10-20 07:30",
              "count": 1, "ranks": [1], "rank_threshold": 10, "url": "https://example.com/a",
-             "mobile_url": "", "ai_summary": "标题简述：热榜摘要。"}
+             "mobile_url": "", "ai_summary": "内容分析：热榜正文分析。"}
     report = prepare_report_data([{"word": "科技", "count": 1, "titles": [title]}])
     report["report_type"] = "工作日早报 · 10-19 00:00—10-20 08:00"
     rss = [{"word": "订阅", "count": 1, "titles": [{**title, "title": "RSS新闻", "ai_summary": "RSS内容摘要。"}]}]
@@ -218,7 +218,7 @@ def test_html_and_actual_feishu_splitter_show_every_summary():
                                                 standalone_data=standalone, get_time_func=lambda: NOW))
     html = render_html_content(report, 1, rss_items=rss, standalone_data=standalone,
                                get_time_func=lambda: NOW)
-    for summary in ("标题简述：热榜摘要。", "RSS内容摘要。", "独立源内容摘要。"):
+    for summary in ("内容分析：热榜正文分析。", "RSS内容摘要。", "独立源内容摘要。"):
         assert summary in content
         assert summary in html
     assert report["report_type"] in html
