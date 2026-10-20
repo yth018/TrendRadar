@@ -105,7 +105,15 @@ class AIClient:
 
         # 提取响应内容
         # 某些模型/提供商返回 list（内容块）而非 str，统一转为 str
-        content = response.choices[0].message.content
+        choice = response.choices[0]
+        content = choice.message.content
+        if not content or getattr(choice, "finish_reason", None) == "length":
+            reason = getattr(choice, "finish_reason", None)
+            reason = reason if reason in ("stop", "length", "content_filter") else "unknown"
+            usage = getattr(response, "usage", None)
+            tokens = getattr(usage, "completion_tokens", None)
+            tokens = tokens if isinstance(tokens, int) else "unknown"
+            print(f"[AI] 响应诊断: finish_reason={reason}, completion_tokens={tokens}, empty_content={not bool(content)}")
         if isinstance(content, list):
             content = "\n".join(
                 item.get("text", str(item)) if isinstance(item, dict) else str(item)

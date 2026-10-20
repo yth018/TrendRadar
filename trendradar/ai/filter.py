@@ -399,6 +399,7 @@ class AIFilter:
         """
         json_str = self._extract_json(response)
         if not json_str:
+            print(f"[AI筛选] 分类响应无法提取 JSON，字符数={len(response or '')}")
             if self.debug:
                 print(f"[AI筛选][DEBUG] 无法从分类响应中提取 JSON，原始响应前 500 字符: {(response or '')[:500]}")
             return None
