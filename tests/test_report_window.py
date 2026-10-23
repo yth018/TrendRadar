@@ -121,6 +121,44 @@ def test_invalid_classification_is_not_successful_zero_matches(response):
     assert ai._parse_classify_response("[]", [{"id": 1, "title": "新闻"}], [{"id": 1, "tag": "科技"}]) == []
 
 
+def test_partial_classification_is_cached_and_only_failed_items_are_retried(tmp_path):
+    storage = LocalStorageBackend(str(tmp_path))
+    save_news(storage, "2026-10-19", [hot(f"item{i}") for i in range(4)])
+    config = {"AI": {}, "AI_FILTER": {"BATCH_SIZE": 40, "BATCH_INTERVAL": 0},
+              "PLATFORMS": [{"id": "p"}]}
+    ctx = SimpleNamespace(config=config, get_time=lambda: NOW, get_storage_manager=lambda: storage)
+
+    def classify(self, titles, tags, interests):
+        if len(titles) > 2 or any(t["title"] in {"item2", "item3"} for t in titles):
+            return None
+        # item1 is a valid zero-match item; it should also be cached.
+        return [{"news_item_id": t["id"], "tag_id": tags[0]["id"], "relevance_score": .9}
+                for t in titles if t["title"] == "item0"]
+
+    with patch.object(AIFilter, "load_interests_content", return_value="科技"), \
+         patch.object(AIFilter, "extract_tags", return_value=[{"tag": "科技", "description": "科技新闻"}]), \
+         patch.object(AIFilter, "classify_batch", classify):
+        with pytest.raises(RuntimeError, match="早报 AI 筛选未完成"):
+            build_window_stats(ctx, NOW, {})
+
+        analyzed = storage.get_analyzed_news_ids("hotlist", interests_file="ai_interests.txt", date="2026-10-19")
+        assert len(analyzed) == 2
+        retried = []
+
+        def recover(self, titles, tags, interests):
+            retried.extend(t["title"] for t in titles)
+            return [{"news_item_id": t["id"], "tag_id": tags[0]["id"], "relevance_score": .9}
+                    for t in titles]
+
+        with patch.object(AIFilter, "classify_batch", recover):
+            hotlist, rss = build_window_stats(ctx, NOW, {})
+        assert set(retried) == {"item2", "item3"}
+        assert len(retried) == 2
+        assert {t["title"] for g in hotlist for t in g["titles"]} == {"item0", "item2", "item3"}
+        assert rss == []
+    storage.cleanup()
+
+
 def test_summary_survives_existing_report_and_feishu_formatter():
     title = {"title": "新闻", "source_name": "源", "time_display": "10-20 07:30",
              "count": 1, "ranks": [1], "rank_threshold": 10,
@@ -197,6 +235,17 @@ def test_failed_summary_never_sends_or_claims_delivery(tmp_path):
          patch("trendradar.core.report_window.build_window_standalone", return_value=None), \
          patch("trendradar.ai.item_summary.enrich_item_summaries", side_effect=ValueError("bad AI")):
         with pytest.raises(ValueError):
+            analyzer._execute_window_report(schedule, [])
+    analyzer._send_notification_if_needed.assert_not_called()
+    assert not (tmp_path / "briefings/2026-10-20.json").exists()
+
+
+def test_failed_classification_never_sends_or_claims_delivery(tmp_path):
+    analyzer = _window_analyzer(tmp_path)
+    schedule = SimpleNamespace(push=True, once_push=True, period_key="morning")
+    with patch("trendradar.core.report_window.build_window_stats",
+               side_effect=RuntimeError("早报 AI 筛选未完成")):
+        with pytest.raises(RuntimeError, match="早报 AI 筛选未完成"):
             analyzer._execute_window_report(schedule, [])
     analyzer._send_notification_if_needed.assert_not_called()
     assert not (tmp_path / "briefings/2026-10-20.json").exists()
