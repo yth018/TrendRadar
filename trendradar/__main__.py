@@ -1671,6 +1671,8 @@ class NewsAnalyzer:
             {"stats": stats, "new_titles": []}, rss_items=rss_items, standalone_data=standalone,
         )
         stats = report_data["stats"]
+        # 翻译器将空 RSS 区域返回为 None；早报后续按列表生成预览和发送记录。
+        rss_items = rss_items or []
         html_file = None
         if cfg["STORAGE"]["FORMATS"]["HTML"]:
             html_file = self.ctx.generate_html(

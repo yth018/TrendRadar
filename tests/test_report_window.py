@@ -227,6 +227,36 @@ def test_pipeline_does_not_repeat_success_or_uncertain_delivery(tmp_path, send_r
     assert record["status"] == status
 
 
+@pytest.mark.parametrize("content_kind", ["hotlist", "standalone", "rss"])
+def test_delivery_after_real_translation_handles_empty_rss(tmp_path, content_kind):
+    import json
+    from trendradar.notification.dispatcher import NotificationDispatcher
+
+    analyzer = _window_analyzer(tmp_path)
+    translator = SimpleNamespace(enabled=True, target_language="中文",
+                                 scope={"HOTLIST": False, "RSS": False, "STANDALONE": False})
+    analyzer.ctx.create_notification_dispatcher.return_value = NotificationDispatcher(
+        analyzer.ctx.config, lambda: NOW, Mock(), translator=translator,
+    )
+    group = {"word": "科技", "count": 1,
+             "titles": [{"title": "新闻", "item_key": "a", "ai_summary": "正文分析"}]}
+    stats = [group] if content_kind == "hotlist" else []
+    rss = [group] if content_kind == "rss" else []
+    standalone = ({"platforms": [], "rss_feeds": [{"items": group["titles"]}]}
+                  if content_kind == "standalone" else None)
+    schedule = SimpleNamespace(push=True, once_push=True, period_key="morning")
+    with patch("trendradar.core.report_window.build_window_stats", return_value=(stats, rss)), \
+         patch("trendradar.core.report_window.build_window_standalone", return_value=standalone), \
+         patch("trendradar.ai.item_summary.enrich_item_summaries"):
+        analyzer._execute_window_report(schedule, [])
+        analyzer._execute_window_report(schedule, [])
+    analyzer._send_notification_if_needed.assert_called_once()
+    assert analyzer._send_notification_if_needed.call_args.kwargs["rss_items"] == rss
+    record = json.loads((tmp_path / "briefings/2026-10-20.json").read_text())
+    assert record["status"] == "sent"
+    assert read_sent_keys(tmp_path / "briefings") == {"a"}
+
+
 def test_failed_summary_never_sends_or_claims_delivery(tmp_path):
     analyzer = _window_analyzer(tmp_path)
     schedule = SimpleNamespace(push=True, once_push=True, period_key="morning")
