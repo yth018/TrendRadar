@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 with patch.dict(os.environ, {"LITELLM_LOCAL_MODEL_COST_MAP": "True"}):
-    from trendradar.ai.item_summary import ItemSummaryError, enrich_item_summaries
+    from trendradar.ai.item_summary import enrich_item_summaries
 
 BODY = ("公司公布本季度收入同比增长百分之二十，主要来自新增客户和订阅业务。"
         "同时研发费用增加，利润增幅低于收入增幅。公司说明下季度将继续投入研发，"
@@ -89,29 +89,48 @@ class ItemSummaryTests(unittest.TestCase):
                 self.assertEqual(item["summary_basis"], "unavailable")
                 self.assertNotIn(ANALYSIS, item["ai_summary"])
 
-    def test_response_shape_errors_do_not_partially_write(self):
-        cases = [
-            (response(entry()), "遗漏了请求 ID"),
-            (response(entry(), entry()), "重复请求 ID"),
-            (response(entry(summary="")), "空或无效摘要"),
-            (response({"summary": "没有ID"}), "缺少 ID"),
-            (response(entry(usable="true")), "可用性判断"),
+    def test_missing_id_is_retried_before_any_fallback(self):
+        self.client.chat.side_effect = [
+            response(entry("news_000001")),
+            response(entry("news_000002")),
         ]
-        for raw, message in cases:
-            with self.subTest(message=message):
-                self.client.chat.return_value = raw
-                items = [{"title": "新闻甲"}, {"title": "新闻乙"}]
-                with self.assertRaisesRegex(ItemSummaryError, message):
-                    enrich_item_summaries([{"titles": items}], None, ai_config={})
-                self.assertTrue(all("ai_summary" not in item for item in items))
+        items = [{"title": "新闻甲"}, {"title": "新闻乙"}]
+        enrich_item_summaries([{"titles": items}], None, ai_config={})
+        self.assertEqual(self.client.chat.call_count, 2)
+        retry = json.loads(self.client.chat.call_args.args[0][1]["content"].split("：\n", 1)[1])
+        self.assertEqual([item["id"] for item in retry["items"]], ["news_000002"])
+        self.assertTrue(all(item["summary_basis"] == "article" for item in items))
+        self.assertIn("内容分析：", items[1]["ai_summary"])
 
-    def test_later_batch_failure_leaves_all_items_untouched(self):
+    def test_invalid_entries_do_not_discard_valid_summaries(self):
+        self.client.chat.return_value = response(
+            entry("news_000001"),
+            {"summary": "没有ID"},
+            entry("news_000001"),
+            entry("news_000002", summary=""),
+            entry("news_000003", usable="true"),
+        )
+        items = [{"title": f"新闻{i}"} for i in range(3)]
+        enrich_item_summaries([{"titles": items}], None, ai_config={})
+        self.assertEqual(items[0]["summary_basis"], "article")
+        self.assertEqual(items[1]["summary_basis"], "unavailable")
+        self.assertEqual(items[2]["summary_basis"], "unavailable")
+
+    def test_invalid_json_is_retried_then_degrades_without_raising(self):
+        self.client.chat.return_value = "{"
+        items = [{"title": "新闻甲"}]
+        enrich_item_summaries([{"titles": items}], None, ai_config={})
+        self.assertEqual(self.client.chat.call_count, 2)
+        self.assertEqual(items[0]["summary_basis"], "unavailable")
+        self.assertEqual(items[0]["ai_summary"], "正文暂不可读，未生成内容分析。")
+
+    def test_later_batch_failure_degrades_only_that_batch(self):
         self.client.chat.side_effect = [response(entry()), RuntimeError("secret-url")]
         items = [{"title": "新闻甲"}, {"title": "新闻乙"}]
-        with self.assertRaises(ItemSummaryError) as exc:
-            enrich_item_summaries([{"titles": items}], None, ai_config={}, batch_size=1)
-        self.assertNotIn("secret-url", str(exc.exception))
-        self.assertTrue(all("ai_summary" not in item for item in items))
+        enrich_item_summaries([{"titles": items}], None, ai_config={}, batch_size=1)
+        self.assertEqual(items[0]["summary_basis"], "article")
+        self.assertEqual(items[1]["summary_basis"], "unavailable")
+        self.assertNotIn("secret-url", items[1]["ai_summary"])
 
     def test_resolved_article_url_is_recorded(self):
         self.reader.side_effect = None

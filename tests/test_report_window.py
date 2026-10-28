@@ -63,6 +63,19 @@ def test_rss_publication_timezone_and_missing_date(tmp_path):
     storage.cleanup()
 
 
+def test_legacy_naive_rss_publication_is_treated_as_utc(tmp_path):
+    """Rows written by the old parser are naive UTC, not naive local time."""
+    storage = LocalStorageBackend(str(tmp_path))
+    item = RSSItem(
+        title="overnight", feed_id="f", url="https://example.com/overnight",
+        published_at="2026-10-18T16:30:00", crawl_time="00:30", first_time="00:30",
+    )
+    storage.save_rss_data(RSSData(date="2026-10-19", crawl_time="00:30", items={"f": [item]}))
+    selected = select_window_items(storage, NOW, {})
+    assert {row["title"] for row in selected.values()} == {"overnight"}
+    storage.cleanup()
+
+
 def test_sent_and_uncertain_records_exclude_overlapping_news(tmp_path):
     key = item_key({"url": "https://example.com/a"})
     write_delivery_record(tmp_path / "2026-10-19.json", "uncertain", {key})
@@ -72,7 +85,8 @@ def test_sent_and_uncertain_records_exclude_overlapping_news(tmp_path):
 
 
 @pytest.mark.parametrize("day,hour,minute,push", [(20, 7, 59, False), (20, 8, 0, True),
-    (20, 9, 59, True), (20, 10, 0, False), (24, 8, 0, False), (25, 8, 0, False), (26, 8, 0, True)])
+    (20, 9, 59, True), (20, 10, 0, True), (20, 13, 59, True), (20, 14, 0, False),
+    (24, 8, 0, False), (25, 8, 0, False), (26, 8, 0, True)])
 def test_existing_scheduler_configuration(day, hour, minute, push):
     timeline = yaml.safe_load(open("config/timeline.yaml"))
     config = yaml.safe_load(open("config/config.yaml"))

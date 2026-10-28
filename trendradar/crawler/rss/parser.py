@@ -9,7 +9,7 @@ import re
 import html
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from email.utils import parsedate_to_datetime
 
@@ -187,6 +187,8 @@ class RSSParser:
             # 替换 Z 为 +00:00
             date_str = date_str.replace("Z", "+00:00")
             dt = datetime.fromisoformat(date_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
             return dt.isoformat()
         except (ValueError, TypeError):
             pass
@@ -280,7 +282,9 @@ class RSSParser:
 
         if date_struct:
             try:
-                dt = datetime(*date_struct[:6])
+                # feedparser normalizes parsed date structs to UTC.  Keep that
+                # offset; a naive value would later be mistaken for local time.
+                dt = datetime(*date_struct[:6], tzinfo=timezone.utc)
                 return dt.isoformat()
             except (ValueError, TypeError):
                 pass
@@ -290,6 +294,8 @@ class RSSParser:
         if date_str:
             try:
                 dt = parsedate_to_datetime(date_str)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
                 return dt.isoformat()
             except (ValueError, TypeError):
                 pass
@@ -297,6 +303,8 @@ class RSSParser:
             # 尝试 ISO 格式
             try:
                 dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
                 return dt.isoformat()
             except (ValueError, TypeError):
                 pass

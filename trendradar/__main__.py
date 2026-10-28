@@ -1656,7 +1656,9 @@ class NewsAnalyzer:
             return None
         summary_cfg = cfg.get("AI_ANALYSIS", {})
         if summary_cfg.get("ENABLED", False) and summary_cfg.get("ITEM_SUMMARIES", False):
-            enrich_item_summaries(stats + standalone_groups, rss_items, ai_config=cfg.get("AI", {}))
+            enrich_item_summaries(
+                stats + (standalone_groups or []), rss_items or [], ai_config=cfg.get("AI", {})
+            )
         self._hotlist_total_count = sum(g["count"] for g in stats)
         self._rss_matched_count = sum(g["count"] for g in rss_items)
         title = f"工作日早报 · {start:%m-%d %H:%M}—{cutoff:%m-%d %H:%M}"

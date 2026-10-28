@@ -3,7 +3,7 @@
 import copy
 import hashlib
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from trendradar.ai.filter_pipeline import AIFilterPipeline
@@ -22,7 +22,7 @@ def window_bounds(now, settings):
     return start, end
 
 
-def _timestamp(value, day, tz):
+def _timestamp(value, day, tz, assume_utc=False):
     if not value:
         return None
     try:
@@ -30,7 +30,11 @@ def _timestamp(value, day, tz):
             value = day + "T" + value.replace("-", ":")
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
-            parsed = tz.localize(parsed) if hasattr(tz, "localize") else parsed.replace(tzinfo=tz)
+            # RSS dates without an offset came from feedparser's UTC struct_time.
+            # Treat them as UTC so legacy rows stay aligned with the local window.
+            source_tz = timezone.utc if assume_utc else tz
+            parsed = (source_tz.localize(parsed) if hasattr(source_tz, "localize")
+                      else parsed.replace(tzinfo=source_tz))
         return parsed.astimezone(tz)
     except (ValueError, TypeError):
         return None
@@ -58,7 +62,9 @@ def select_window_items(storage, now, settings, sent_keys=()):
                     if observed is None:
                         continue
                     first_seen[key] = min(first_seen.get(key, observed), observed)
-                    published = _timestamp(getattr(item, "published_at", ""), day, now.tzinfo)
+                    published = _timestamp(
+                        getattr(item, "published_at", ""), day, now.tzinfo, assume_utc=True
+                    )
                     stamp = published if kind == "rss" and published else first_seen[key]
                     basis = "发布时间" if kind == "rss" and published else "首次采集"
                     if start <= stamp <= end and key not in sent_keys:

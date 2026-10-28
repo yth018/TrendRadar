@@ -55,7 +55,7 @@ def _iter_title_records(groups: Optional[List[Dict]]) -> List[Dict]:
 
 
 def _response_summaries(response: str, sources: Dict[str, str]) -> Dict[str, Optional[Tuple[str, str]]]:
-    """校验完整响应；无法在输入材料中核对的依据不得成为正文分析。"""
+    """校验可用的响应条目；缺失或无效条目交由调用方重试/降级。"""
     if not isinstance(response, str):
         raise ItemSummaryError("AI 摘要响应格式无效")
     try:
@@ -67,29 +67,55 @@ def _response_summaries(response: str, sources: Dict[str, str]) -> Dict[str, Opt
 
     summaries = {}
     for entry in payload["items"]:
-        if not isinstance(entry, dict) or "id" not in entry:
-            raise ItemSummaryError("AI 摘要响应中存在缺少 ID 的条目")
-        item_id = entry["id"]
+        if not isinstance(entry, dict):
+            continue
+        item_id = entry.get("id")
         if not isinstance(item_id, str) or item_id not in sources:
-            raise ItemSummaryError("AI 摘要响应包含未知请求 ID")
+            continue
         if item_id in summaries:
-            raise ItemSummaryError("AI 摘要响应包含重复请求 ID")
+            continue
         if not isinstance(entry.get("usable"), bool):
-            raise ItemSummaryError("AI 摘要响应缺少内容可用性判断")
+            continue
         if not entry["usable"]:
             summaries[item_id] = None
             continue
         summary, evidence = entry.get("summary"), entry.get("evidence")
         if not isinstance(summary, str) or not summary.strip():
-            raise ItemSummaryError("AI 摘要响应包含空或无效摘要")
+            continue
         if (not isinstance(evidence, str) or not 20 <= len(evidence.strip()) <= 120
                 or _normalize_text(evidence) not in _normalize_text(sources[item_id])):
             summaries[item_id] = None
             continue
         summaries[item_id] = (summary.strip(), evidence.strip())
-    if set(summaries) != set(sources):
-        raise ItemSummaryError("AI 摘要响应遗漏了请求 ID")
     return summaries
+
+
+def _request_batch_summaries(client: AIClient, batch: List[Dict], label: str) -> Dict[str, Optional[Tuple[str, str]]]:
+    """请求一批摘要；只重试缺失/无效条目，最终仍缺失的条目降级为不可读。"""
+    pending = {item["id"]: item for item in batch}
+    results: Dict[str, Optional[Tuple[str, str]]] = {}
+    for attempt in range(2):
+        request = list(pending.values())
+        messages = [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": "请阅读并分析以下新闻内容：\n" + json.dumps({"items": request}, ensure_ascii=False)},
+        ]
+        try:
+            response = client.chat(messages)
+            parsed = _response_summaries(response, {item["id"]: item["content"] for item in request})
+        except Exception:
+            print(f"[内容分析] {label} 请求或响应无效，将重试 {len(pending)} 条")
+            continue
+
+        results.update(parsed)
+        pending = {item_id: item for item_id, item in pending.items() if item_id not in parsed}
+        if not pending:
+            break
+        print(f"[内容分析] {label} 响应缺少 {len(pending)} 条，重试缺失条目")
+
+    if pending:
+        print(f"[内容分析] {label} 仍有 {len(pending)} 条摘要不可用，按不可读处理")
+    return results
 
 
 def enrich_item_summaries(
@@ -144,15 +170,8 @@ def enrich_item_summaries(
     client = AIClient(ai_config) if request_items else None
     for start in range(0, len(request_items), batch_size):
         batch = request_items[start:start + batch_size]
-        messages = [
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": "请阅读并分析以下新闻内容：\n" + json.dumps({"items": batch}, ensure_ascii=False)},
-        ]
-        try:
-            response = client.chat(messages)
-        except Exception:
-            raise ItemSummaryError(f"AI 摘要请求失败（第 {start // batch_size + 1} 批）") from None
-        results.update(_response_summaries(response, {item["id"]: item["content"] for item in batch}))
+        label = f"第 {start // batch_size + 1} 批"
+        results.update(_request_batch_summaries(client, batch, label))
         print(f"[内容分析] 已完成 {min(start + batch_size, len(request_items))}/{len(request_items)} 条")
 
     counts = {"article": 0, "rss_summary": 0, "unavailable": 0}
