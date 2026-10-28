@@ -85,7 +85,8 @@ def test_sent_and_uncertain_records_exclude_overlapping_news(tmp_path):
 
 
 @pytest.mark.parametrize("day,hour,minute,push", [(20, 7, 59, False), (20, 8, 0, True),
-    (20, 9, 59, True), (20, 10, 0, True), (20, 13, 59, True), (20, 14, 0, False),
+    (20, 9, 59, True), (20, 10, 0, True), (20, 13, 59, True), (20, 15, 59, True),
+    (20, 16, 0, False),
     (24, 8, 0, False), (25, 8, 0, False), (26, 8, 0, True)])
 def test_existing_scheduler_configuration(day, hour, minute, push):
     timeline = yaml.safe_load(open("config/timeline.yaml"))

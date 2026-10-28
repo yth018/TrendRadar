@@ -240,7 +240,7 @@ presets:
         start: "08:00"
         # GitHub cron 可能延迟数小时；内容截止时间仍是 08:00，
         # 这里只放宽触发窗口，让延迟运行补发当天早报（发送记录防止重复）。
-        end: "14:00"
+        end: "16:00"
         analyze: true              # AI 处理早报内容
         ai_mode: "daily"         # AI 处理早报内容
         push: true                 # 工作日早报

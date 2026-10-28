@@ -5,7 +5,7 @@
 ## 当前规则
 
 - 时区：`Asia/Shanghai`。周一至周五早上 08:00 触发，周末仅采集；不识别法定节假日及调休。
-- `config/timeline.yaml` 的 `office_hours.periods.morning_briefing` 为 08:00—14:00，`once.push: true`。窗口用于容纳 Actions 排队延迟，不代表重复推送；当天发送记录存在时后续运行只采集、不再发送。
+- `config/timeline.yaml` 的 `office_hours.periods.morning_briefing` 为 08:00—16:00，`once.push: true`。窗口用于容纳 Actions 排队延迟和当天补发，不代表重复推送；当天发送记录存在时后续运行只采集、不再发送。10:00 后发送的早报会标注“延迟补发”。
 - 保留每小时第 33 分钟采集，另加 UTC `0 0 * * 1-5` 和 `0 2 * * 1-5`。Actions 可能延迟，抓取和模型处理也需时间，不能保证 08:00 整送达；10:00 的任务是主任务延迟或漏跑时的兜底。
 - `config/config.yaml` 的 `report.window.enabled: true`、`cutoff: "08:00"` 把 daily 数据范围扩展为昨日 00:00 至今日 08:00（包含边界）。延迟执行不改变截止时间；周一不额外补入周五和周六。
 - RSS 发布时间统一按 UTC 解析并保留偏移；早报窗口再转换为 `Asia/Shanghai` 比较，避免自定义源的凌晨文章被误判为前一天。逐条摘要按批次独立降级：某一批响应缺少 ID 时只重试缺失条目，仍失败则标注“正文暂不可读”，不再中断整次早报推送。

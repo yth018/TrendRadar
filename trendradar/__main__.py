@@ -1662,6 +1662,8 @@ class NewsAnalyzer:
         self._hotlist_total_count = sum(g["count"] for g in stats)
         self._rss_matched_count = sum(g["count"] for g in rss_items)
         title = f"工作日早报 · {start:%m-%d %H:%M}—{cutoff:%m-%d %H:%M}"
+        if now.hour >= 10:
+            title += "（延迟补发）"
         coverage = directory / "coverage.json"
         if coverage.exists():
             started = json.loads(coverage.read_text(encoding="utf-8")).get("collection_started_at", "")
