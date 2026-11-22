@@ -7,6 +7,7 @@ TrendRadar 主程序
 """
 
 import argparse
+from dataclasses import replace
 import json
 import shutil
 import os
@@ -1615,7 +1616,7 @@ class NewsAnalyzer:
     def _execute_window_report(self, schedule, failed_ids):
         """扩展原有 daily 数据范围；调度、日库分类、HTML 和通知继续复用原实现。"""
         from trendradar.core.report_window import (
-            build_window_stats, build_window_standalone, read_sent_keys, window_bounds, write_delivery_record,
+            build_window_stats, build_window_standalone, limit_briefing, read_sent_keys, window_bounds, write_delivery_record,
         )
         from trendradar.ai.item_summary import enrich_item_summaries
 
@@ -1628,7 +1629,20 @@ class NewsAnalyzer:
         directory = Path(cfg["STORAGE"]["LOCAL"]["DATA_DIR"]) / "briefings"
         record = directory / (now.strftime("%Y-%m-%d") + ".json")
         scheduler = self.ctx.create_scheduler()
-        if not preview:
+        manual_run_id = os.environ.get("GITHUB_RUN_ID", "")
+        test_push = (
+            not preview and cfg["ENABLE_NOTIFICATION"]
+            and os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+            and os.environ.get("INPUT_DRY_RUN") == "false"
+            and manual_run_id.isdecimal()
+        )
+        if test_push:
+            record = directory / "test-deliveries" / f"{manual_run_id}.json"
+            if record.exists():
+                print("[早报试发] 此次运行已有发送记录，跳过")
+                return None
+            schedule = replace(schedule, push=True, once_push=False)
+        elif not preview:
             if not schedule.push:
                 # 原有分类缓存在日库，静默采集时提前分类，减少早报等待时间。
                 result = self.ctx.run_ai_filter(self.interests_file)
@@ -1650,6 +1664,7 @@ class NewsAnalyzer:
         matched_keys = {t["item_key"] for g in stats + rss_items for t in g["titles"]}
         standalone = build_window_standalone(self.ctx, now, cfg["REPORT_WINDOW"],
                                              read_sent_keys(directory) | matched_keys)
+        stats, rss_items, standalone = limit_briefing(stats, rss_items, standalone)
         standalone_groups = [{"titles": g["items"]} for source in (standalone or {}).values() for g in source]
         if not stats and not rss_items and not standalone:
             print("[早报] 时间窗口内没有符合兴趣的新内容，跳过推送")
@@ -1662,7 +1677,9 @@ class NewsAnalyzer:
         self._hotlist_total_count = sum(g["count"] for g in stats)
         self._rss_matched_count = sum(g["count"] for g in rss_items)
         title = f"工作日早报 · {start:%m-%d %H:%M}—{cutoff:%m-%d %H:%M}"
-        if now.hour >= 10:
+        if test_push:
+            title = f"早报试发 · {start:%m-%d %H:%M}—{cutoff:%m-%d %H:%M}"
+        elif now.hour >= 10:
             title += "（延迟补发）"
         coverage = directory / "coverage.json"
         if coverage.exists():

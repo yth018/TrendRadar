@@ -3,8 +3,11 @@
 import copy
 import hashlib
 import json
+import re
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unicodedata import normalize
 
 from trendradar.ai.filter_pipeline import AIFilterPipeline
 
@@ -129,6 +132,76 @@ def build_window_stats(ctx, now, settings, interests_file=None, sent_keys=()):
         stats.sort(key=lambda g: (g.get("position", 9999), -g["count"]) if priority
                    else (-g["count"], g.get("position", 9999)))
     return hotlist, rss
+
+
+def limit_briefing(hotlist, rss, standalone, total_limit=10, per_tag_limit=2, standalone_limit=2):
+    """按标签优先级轮选，热榜、RSS 和独立区共享早报配额。"""
+    seen_titles = set()
+
+    def accept(item):
+        title = re.sub(r"[\W_]+", "", normalize("NFKC", item["title"]).casefold())
+        if title and title in seen_titles:
+            return False
+        if title:
+            seen_titles.add(title)
+        return True
+
+    groups = sorted(
+        [(kind, group) for kind, source in enumerate((hotlist, rss)) for group in source],
+        key=lambda entry: entry[1].get("position", 9999),
+    )
+    selected = [[] for _ in groups]
+    selection_order = []
+    candidates = [iter(group["titles"]) for _, group in groups]
+    tag_counts = Counter()
+    remaining = total_limit
+    while remaining:
+        previous_remaining = remaining
+        for index, (_, group) in enumerate(groups):
+            tag = group["word"]
+            if tag_counts[tag] >= per_tag_limit:
+                continue
+            for item in candidates[index]:
+                if accept(item):
+                    selected[index].append(item)
+                    selection_order.append(index)
+                    tag_counts[tag] += 1
+                    remaining -= 1
+                    break
+            if not remaining:
+                break
+        if remaining == previous_remaining:
+            break
+
+    selected_groups = ([], [])
+    for (kind, group), titles in zip(groups, selected):
+        if titles:
+            selected_groups[kind].append({**group, "titles": titles, "count": len(titles)})
+
+    # Give independents up to two slots, within the same global cap.
+    # If the main list filled the cap, replace its lowest-priority selections.
+    selected_standalone = {}
+    slots = min(standalone_limit, total_limit)
+    for kind, sources in (standalone or {}).items():
+        for source in sources:
+            items = []
+            for item in source["items"]:
+                if not slots:
+                    break
+                if accept(item):
+                    items.append(item)
+                    slots -= 1
+            if items:
+                selected_standalone.setdefault(kind, []).append({**source, "items": items})
+
+    overflow = max(0, min(standalone_limit, total_limit) - slots - remaining)
+    for index in reversed(selection_order[len(selection_order) - overflow:]):
+        selected[index].pop()
+    for groups_for_kind in selected_groups:
+        for group in groups_for_kind:
+            group["count"] = len(group["titles"])
+        groups_for_kind[:] = [group for group in groups_for_kind if group["titles"]]
+    return selected_groups[0], selected_groups[1], selected_standalone or None
 
 
 def build_window_standalone(ctx, now, settings, excluded_keys):
